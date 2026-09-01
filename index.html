@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Household Tasks</title>
+<link rel="stylesheet" href="css/styles.css">
+</head>
+<body data-theme="bold">
+
+<!-- ============ AUTH VIEW ============ -->
+<div id="auth-view" class="screen">
+  <h1>Household Tasks</h1>
+  <p>Chores, tasks and streaks — for everyone at home.</p>
+
+  <div class="tabbar">
+    <button class="tab-btn active" id="tab-signin">Sign in</button>
+    <button class="tab-btn" id="tab-signup">Create household</button>
+    <button class="tab-btn" id="tab-join">Join household</button>
+  </div>
+
+  <form id="signin-form" class="card">
+    <label>Email</label><input type="email" id="signin-email" required>
+    <label>Password</label><input type="password" id="signin-password" required>
+    <button class="btn" type="submit">Sign in</button>
+    <p class="error-text hidden" id="signin-error"></p>
+  </form>
+
+  <form id="signup-form" class="card hidden">
+    <label>Household name</label><input type="text" id="signup-household" placeholder="The Shah household" required>
+    <label>Your name</label><input type="text" id="signup-name" required>
+    <label>Email</label><input type="email" id="signup-email" required>
+    <label>Password</label><input type="password" id="signup-password" required minlength="6">
+    <button class="btn" type="submit">Create household</button>
+    <p class="error-text hidden" id="signup-error"></p>
+  </form>
+
+  <form id="join-form" class="card hidden">
+    <p>Ask whoever set up your household for the invite code.</p>
+    <label>Invite code</label><input type="text" id="join-code" required>
+    <label>Your name</label><input type="text" id="join-name" required>
+    <label>Email</label><input type="email" id="join-email" required>
+    <label>Password</label><input type="password" id="join-password" required minlength="6">
+    <button class="btn" type="submit">Join household</button>
+    <p class="error-text hidden" id="join-error"></p>
+  </form>
+</div>
+
+<!-- ============ APP VIEW ============ -->
+<div id="app-view" class="screen hidden">
+  <div class="app-header">
+    <div class="household-name" id="household-name"></div>
+    <div class="header-actions">
+      <button class="icon-btn" id="settings-btn" title="Settings">&#9881;</button>
+      <button class="icon-btn" id="signout-btn" title="Sign out">&#8594;</button>
+    </div>
+  </div>
+
+  <div class="member-row" id="member-row"></div>
+
+  <div class="tabbar">
+    <button class="tab-btn active" data-tab="home">Home</button>
+    <button class="tab-btn" data-tab="history">History</button>
+    <button class="tab-btn" data-tab="settings">Settings</button>
+  </div>
+
+  <!-- HOME -->
+  <div id="panel-home">
+    <div class="stat-strip">
+      <div class="stat-card"><div class="big" id="stat-streak">0 days</div><div class="small">household streak</div></div>
+      <div class="stat-card"><div class="big" id="stat-open">0</div><div class="small">open tasks</div></div>
+    </div>
+
+    <div class="section-title">Leaderboard</div>
+    <div class="card" id="leaderboard"></div>
+
+    <div class="section-title">To do</div>
+    <div id="task-list"></div>
+    <button class="btn" id="add-task-btn">+ Add task</button>
+
+    <div class="section-title">Done today</div>
+    <div id="done-list"></div>
+  </div>
+
+  <!-- HISTORY -->
+  <div id="panel-history" class="hidden">
+    <div class="section-title">Recent activity</div>
+    <div id="history-list"></div>
+  </div>
+
+  <!-- SETTINGS -->
+  <div id="panel-settings" class="hidden">
+    <div class="section-title">App style</div>
+    <div class="theme-grid" id="theme-grid"></div>
+
+    <div class="section-title">Invite code</div>
+    <div class="card">
+      <p style="margin-bottom:4px">Share this code so another parent can join your household:</p>
+      <h2 id="invite-code" style="letter-spacing:.08em"></h2>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="js/config.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
