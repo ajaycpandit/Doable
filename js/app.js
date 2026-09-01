@@ -41,7 +41,7 @@ $("#tab-join").addEventListener("click", () => setAuthMode("join"));
 function setAuthMode(mode) {
   ["signin", "signup", "join"].forEach(m => {
     $("#tab-" + m).classList.toggle("active", m === mode);
-    $("#form-" + m).classList.toggle("hidden", m !== mode);
+    $("#" + m + "-form").classList.toggle("hidden", m !== mode);
   });
 }
 
