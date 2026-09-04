@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Quick Add — Doable</title>
+
+<link rel="manifest" href="quickadd-manifest.json">
+<meta name="theme-color" content="#111213">
+<link rel="apple-touch-icon" href="icons/quickadd-apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Quick Add">
+
+<link rel="stylesheet" href="css/styles.css">
+<style>
+  .qa-wrap { display: flex; flex-direction: column; justify-content: center; min-height: 100dvh; padding: max(24px, env(safe-area-inset-top)) 20px max(24px, env(safe-area-inset-bottom)); }
+  .qa-title { font-size: 22px; font-weight: 700; margin-bottom: 4px; }
+  .qa-chip-row { display: flex; gap: 8px; margin: 4px 0 4px; }
+  .qa-chip { flex: 1; padding: 10px; border-radius: 10px; border: 1px solid var(--card-border); background: var(--card-bg);
+    color: var(--text-secondary); font-weight: 600; font-size: 13px; text-align: center; cursor: pointer; }
+  .qa-chip.active { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+  .qa-confirm { text-align: center; font-size: 15px; font-weight: 600; color: var(--success); margin-top: 10px; min-height: 20px; }
+</style>
+</head>
+<body data-theme="dark">
+
+<div class="qa-wrap">
+  <div id="qa-loading">Loading…</div>
+
+  <div id="qa-signedout" class="hidden">
+    <p>You're not signed in on this device yet.</p>
+    <a class="btn" href="index.html" style="display:block;text-align:center;text-decoration:none">Open the full app to sign in</a>
+  </div>
+
+  <form id="qa-form" class="hidden">
+    <div class="qa-title">Quick add a task</div>
+    <p id="qa-subtitle" style="margin-bottom:4px"></p>
+    <input type="text" id="qa-input" placeholder="What needs doing?" required autofocus>
+
+    <label>Due</label>
+    <div class="qa-chip-row">
+      <div class="qa-chip active" data-when="today">Today</div>
+      <div class="qa-chip" data-when="tomorrow">Tomorrow</div>
+      <div class="qa-chip" data-when="none">No date</div>
+    </div>
+
+    <label>For</label>
+    <select id="qa-assignee"></select>
+
+    <button class="btn" type="submit">Add task</button>
+    <div class="qa-confirm" id="qa-confirm"></div>
+  </form>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="js/config.js"></script>
+<script src="js/quick-add.js"></script>
+</body>
+</html>

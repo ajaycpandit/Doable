@@ -32,7 +32,9 @@ create table tasks (
   assigned_to uuid references members(id) on delete set null,
   created_by uuid references members(id) on delete set null,
   due_date date,
+  due_time time,
   recurrence text not null default 'none',      -- none | daily | weekly | weekdays
+  remind_before text not null default 'none',   -- none | 5m | 30m | 1h | 2h | 1d
   points integer not null default 10,
   status text not null default 'pending',       -- pending | done
   completed_at timestamptz,
@@ -95,6 +97,8 @@ create policy "select household history" on task_history
   for select using (household_id in (select my_household_ids()));
 create policy "insert household history" on task_history
   for insert with check (household_id in (select my_household_ids()));
+create policy "delete household history" on task_history
+  for delete using (household_id in (select my_household_ids()));
 
 -- Special-case: a brand-new signed-in user has no member row yet, so
 -- my_household_ids() is empty and they'd be locked out of creating one.
@@ -105,3 +109,46 @@ create policy "create new household" on households
 
 create policy "create first member for self" on members
   for insert with check (auth_user_id = auth.uid() or household_id in (select my_household_ids()));
+
+-- Signup/join go through these functions (not raw inserts) so that the
+-- household + member rows are created atomically, avoiding an RLS
+-- chicken-and-egg problem: insert().select() tries to read the new row
+-- back immediately, but the SELECT policy above depends on a member row
+-- that doesn't exist yet at that instant.
+create or replace function create_household(hh_name text, member_name text)
+returns table(household_id uuid, invite_code text)
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  new_household households;
+begin
+  insert into households (name) values (hh_name) returning * into new_household;
+  insert into members (household_id, auth_user_id, display_name, avatar_color, is_kid)
+  values (new_household.id, auth.uid(), member_name, '#7F77DD', false);
+  return query select new_household.id, new_household.invite_code;
+end;
+$$;
+
+create or replace function join_household(code text, member_name text)
+returns table(household_id uuid, household_name text)
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  hh households;
+begin
+  select * into hh from households where invite_code = code;
+  if hh.id is null then
+    raise exception 'Invite code not found';
+  end if;
+  insert into members (household_id, auth_user_id, display_name, avatar_color, is_kid)
+  values (hh.id, auth.uid(), member_name, '#D85A30', false);
+  return query select hh.id, hh.name;
+end;
+$$;
+
+grant execute on function create_household(text, text) to authenticated;
+grant execute on function join_household(text, text) to authenticated;

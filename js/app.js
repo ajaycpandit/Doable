@@ -18,6 +18,8 @@ let state = {
   tasks: [],
   history: [],
   tab: "home",
+  calMode: "month",
+  calCursor: new Date(),
 };
 
 const $ = (sel) => document.querySelector(sel);
@@ -63,13 +65,8 @@ $("#signup-form").addEventListener("submit", async (e) => {
   if (error) return authError("#signup-error", error.message);
   const userId = data.user?.id;
   if (!userId) return authError("#signup-error", "Check your email to confirm your account, then sign in.");
-  const { data: hh, error: hhErr } = await sb.from("households").insert({ name: householdName }).select().single();
-  if (hhErr) return authError("#signup-error", hhErr.message);
-  const { error: memErr } = await sb.from("members").insert({
-    household_id: hh.id, auth_user_id: userId, display_name: yourName || "Parent",
-    avatar_color: COLORS[0], is_kid: false,
-  });
-  if (memErr) return authError("#signup-error", memErr.message);
+  const { error: rpcErr } = await sb.rpc("create_household", { hh_name: householdName, member_name: yourName || "Parent" });
+  if (rpcErr) return authError("#signup-error", rpcErr.message);
   await boot();
 });
 
@@ -79,17 +76,12 @@ $("#join-form").addEventListener("submit", async (e) => {
   const password = $("#join-password").value;
   const yourName = $("#join-name").value.trim();
   const code = $("#join-code").value.trim();
-  const { data: hh, error: hhErr } = await sb.from("households").select("*").eq("invite_code", code).single();
-  if (hhErr || !hh) return authError("#join-error", "Invite code not found.");
   const { data, error } = await sb.auth.signUp({ email, password });
   if (error) return authError("#join-error", error.message);
   const userId = data.user?.id;
   if (!userId) return authError("#join-error", "Check your email to confirm your account, then sign in.");
-  const { error: memErr } = await sb.from("members").insert({
-    household_id: hh.id, auth_user_id: userId, display_name: yourName || "Parent",
-    avatar_color: COLORS[1], is_kid: false,
-  });
-  if (memErr) return authError("#join-error", memErr.message);
+  const { error: rpcErr } = await sb.rpc("join_household", { code, member_name: yourName || "Parent" });
+  if (rpcErr) return authError("#join-error", rpcErr.message);
   await boot();
 });
 
@@ -259,16 +251,27 @@ async function completeTask(task) {
     await sb.from("tasks").insert({
       household_id: state.household.id, title: task.title, notes: task.notes, category: task.category,
       assigned_to: task.assigned_to, created_by: task.created_by,
-      due_date: nextDueDate(task.due_date, task.recurrence), recurrence: task.recurrence, points: task.points,
+      due_date: nextDueDate(task.due_date, task.recurrence), due_time: task.due_time,
+      recurrence: task.recurrence, remind_before: task.remind_before, points: task.points,
     });
   }
   actor.points = (actor.points || 0) + task.points;
   await loadTasks(); await loadHistory(); renderAll();
+  refreshDayModalIfOpen();
 }
 
 async function deleteTask(task) {
   await sb.from("tasks").delete().eq("id", task.id);
   await loadTasks(); renderAll();
+  refreshDayModalIfOpen();
+}
+
+function fmtTime(t) {
+  if (!t) return "";
+  const [h, m] = t.split(":").map(Number);
+  const period = h >= 12 ? "PM" : "AM";
+  const hh = ((h + 11) % 12) + 1;
+  return `${hh}:${String(m).padStart(2, "0")} ${period}`;
 }
 
 function taskRow(task) {
@@ -278,12 +281,14 @@ function taskRow(task) {
     <div class="check ${isDone ? "done" : ""}">${isDone ? "&#10003;" : ""}</div>
     <div style="flex:1">
       <div class="task-title ${isDone ? "done" : ""}">${escapeHtml(task.title)}</div>
-      <div class="task-meta">${assignee ? escapeHtml(assignee.display_name) : "Unassigned"}${task.due_date ? " &middot; " + fmtDate(task.due_date) : ""}${task.recurrence !== "none" ? " &middot; " + task.recurrence : ""}</div>
+      <div class="task-meta">${assignee ? escapeHtml(assignee.display_name) : "Unassigned"}${task.due_date ? " &middot; " + fmtDate(task.due_date) : ""}${task.due_time ? " " + fmtTime(task.due_time) : ""}${task.recurrence !== "none" ? " &middot; " + task.recurrence : ""}</div>
     </div>
     ${!isDone ? `<div class="task-pts">+${task.points}</div>` : ""}
+    <button class="icon-btn task-edit" title="Edit" style="width:28px;height:28px;font-size:13px">&#9998;</button>
     <button class="icon-btn task-actions" title="Delete" style="width:28px;height:28px;font-size:13px">&times;</button>
   </div>`);
   if (!isDone) row.querySelector(".check").addEventListener("click", () => completeTask(task));
+  row.querySelector(".task-edit").addEventListener("click", () => openEditTaskModal(task));
   row.querySelector(".task-actions").addEventListener("click", () => { if (confirm("Delete this task?")) deleteTask(task); });
   return row;
 }
@@ -340,7 +345,7 @@ function computeStreak() {
 
 $("#add-task-btn").addEventListener("click", openAddTaskModal);
 
-function openAddTaskModal() {
+function openAddTaskModal(presetDate) {
   const options = state.members.map(m => `<option value="${m.id}">${escapeHtml(m.display_name)}</option>`).join("");
   const backdrop = el(`<div class="modal-backdrop"><div class="modal-sheet">
     <h3>New task</h3>
@@ -349,10 +354,15 @@ function openAddTaskModal() {
       <label>Notes (optional)</label><textarea id="at-notes"></textarea>
       <label>Category</label><select id="at-category"><option value="chore">Chore</option><option value="task">Task</option></select>
       <label>Assign to</label><select id="at-assignee"><option value="">Unassigned</option>${options}</select>
-      <label>Due date</label><input type="date" id="at-due" value="${daysFromNow(0)}">
+      <label>Due date</label><input type="date" id="at-due" value="${presetDate || daysFromNow(0)}">
+      <label>Time (optional)</label><input type="time" id="at-time">
       <label>Repeats</label><select id="at-recurrence">
         <option value="none">Doesn't repeat</option><option value="daily">Daily</option>
         <option value="weekdays">Weekdays</option><option value="weekly">Weekly</option></select>
+      <label>Remind me (via your calendar feed)</label><select id="at-remind">
+        <option value="none">No reminder</option><option value="5m">5 minutes before</option>
+        <option value="30m">30 minutes before</option><option value="1h">1 hour before</option>
+        <option value="2h">2 hours before</option><option value="1d">1 day before</option></select>
       <label>Points</label><input type="text" id="at-points" value="10">
       <button class="btn" type="submit">Add task</button>
       <button class="btn btn-secondary" type="button" id="at-cancel">Cancel</button>
@@ -366,12 +376,203 @@ function openAddTaskModal() {
     await sb.from("tasks").insert({
       household_id: state.household.id, title: $("#at-title").value.trim(), notes: $("#at-notes").value.trim() || null,
       category: $("#at-category").value, assigned_to: $("#at-assignee").value || null, created_by: state.activeMemberId,
-      due_date: $("#at-due").value || null, recurrence: $("#at-recurrence").value, points,
+      due_date: $("#at-due").value || null, due_time: $("#at-time").value || null,
+      recurrence: $("#at-recurrence").value, remind_before: $("#at-remind").value, points,
     });
     backdrop.remove();
     await loadTasks(); renderAll();
+    refreshDayModalIfOpen();
   });
 }
+
+function openEditTaskModal(task) {
+  const options = state.members.map(m => `<option value="${m.id}" ${m.id === task.assigned_to ? "selected" : ""}>${escapeHtml(m.display_name)}</option>`).join("");
+  const opt = (val, cur) => val === cur ? "selected" : "";
+  const backdrop = el(`<div class="modal-backdrop"><div class="modal-sheet">
+    <h3>Edit task</h3>
+    <form id="edit-task-form">
+      <label>Title</label><input type="text" id="et-title" required value="${escapeHtml(task.title)}">
+      <label>Notes (optional)</label><textarea id="et-notes">${escapeHtml(task.notes || "")}</textarea>
+      <label>Category</label><select id="et-category">
+        <option value="chore" ${opt("chore", task.category)}>Chore</option>
+        <option value="task" ${opt("task", task.category)}>Task</option></select>
+      <label>Assign to</label><select id="et-assignee"><option value="" ${task.assigned_to ? "" : "selected"}>Unassigned</option>${options}</select>
+      <label>Due date</label><input type="date" id="et-due" value="${task.due_date || ""}">
+      <label>Time (optional)</label><input type="time" id="et-time" value="${task.due_time ? task.due_time.slice(0,5) : ""}">
+      <label>Repeats</label><select id="et-recurrence">
+        <option value="none" ${opt("none", task.recurrence)}>Doesn't repeat</option>
+        <option value="daily" ${opt("daily", task.recurrence)}>Daily</option>
+        <option value="weekdays" ${opt("weekdays", task.recurrence)}>Weekdays</option>
+        <option value="weekly" ${opt("weekly", task.recurrence)}>Weekly</option></select>
+      <label>Remind me (via your calendar feed)</label><select id="et-remind">
+        <option value="none" ${opt("none", task.remind_before)}>No reminder</option>
+        <option value="5m" ${opt("5m", task.remind_before)}>5 minutes before</option>
+        <option value="30m" ${opt("30m", task.remind_before)}>30 minutes before</option>
+        <option value="1h" ${opt("1h", task.remind_before)}>1 hour before</option>
+        <option value="2h" ${opt("2h", task.remind_before)}>2 hours before</option>
+        <option value="1d" ${opt("1d", task.remind_before)}>1 day before</option></select>
+      <label>Points</label><input type="text" id="et-points" value="${task.points}">
+      <button class="btn" type="submit">Save changes</button>
+      <button class="btn btn-secondary" type="button" id="et-cancel">Cancel</button>
+    </form>
+  </div></div>`);
+  document.body.appendChild(backdrop);
+  backdrop.querySelector("#et-cancel").addEventListener("click", () => backdrop.remove());
+  backdrop.querySelector("#edit-task-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const points = parseInt($("#et-points").value, 10) || 10;
+    await sb.from("tasks").update({
+      title: $("#et-title").value.trim(), notes: $("#et-notes").value.trim() || null,
+      category: $("#et-category").value, assigned_to: $("#et-assignee").value || null,
+      due_date: $("#et-due").value || null, due_time: $("#et-time").value || null,
+      recurrence: $("#et-recurrence").value, remind_before: $("#et-remind").value, points,
+    }).eq("id", task.id);
+    backdrop.remove();
+    await loadTasks(); renderAll();
+    refreshDayModalIfOpen();
+  });
+}
+
+// ---------------- Calendar ----------------
+
+function startOfWeek(d) { const x = new Date(d); x.setDate(x.getDate() - x.getDay()); x.setHours(0,0,0,0); return x; }
+function isoDate(d) { return d.toISOString().slice(0, 10); }
+function sameDay(a, b) { return isoDate(a) === isoDate(b); }
+
+function tasksOnDate(dateIso) { return state.tasks.filter(t => t.due_date === dateIso); }
+
+function memberColor(memberId) {
+  const m = state.members.find(mm => mm.id === memberId);
+  return m ? m.avatar_color : "var(--text-muted)";
+}
+
+$("#cal-mode-month").addEventListener("click", () => setCalMode("month"));
+$("#cal-mode-week").addEventListener("click", () => setCalMode("week"));
+function setCalMode(mode) {
+  state.calMode = mode;
+  $("#cal-mode-month").classList.toggle("active", mode === "month");
+  $("#cal-mode-week").classList.toggle("active", mode === "week");
+  renderCalendar();
+}
+
+$("#cal-prev").addEventListener("click", () => { navCalendar(-1); });
+$("#cal-next").addEventListener("click", () => { navCalendar(1); });
+function navCalendar(dir) {
+  const c = new Date(state.calCursor);
+  if (state.calMode === "month") c.setMonth(c.getMonth() + dir);
+  else c.setDate(c.getDate() + dir * 7);
+  state.calCursor = c;
+  renderCalendar();
+}
+
+function renderCalendar() {
+  state.calMode === "month" ? renderMonthGrid() : renderWeekGrid();
+}
+
+function renderMonthGrid() {
+  const cursor = state.calCursor;
+  $("#cal-label").textContent = cursor.toLocaleDateString(undefined, { month: "long", year: "numeric" });
+
+  const firstOfMonth = new Date(cursor.getFullYear(), cursor.getMonth(), 1);
+  const gridStart = startOfWeek(firstOfMonth);
+  const today = new Date();
+
+  const dowRow = ["S","M","T","W","T","F","S"].map(d => `<div class="cal-dow">${d}</div>`).join("");
+  const grid = $("#calendar-grid");
+  grid.innerHTML = `<div class="cal-grid-month">${dowRow}</div>`;
+  const gridEl = grid.querySelector(".cal-grid-month");
+
+  for (let i = 0; i < 42; i++) {
+    const d = new Date(gridStart); d.setDate(d.getDate() + i);
+    const iso = isoDate(d);
+    const dayTasks = tasksOnDate(iso);
+    const cell = el(`<div class="cal-cell ${sameDay(d, today) ? "today" : ""} ${d.getMonth() !== cursor.getMonth() ? "other-month" : ""}">
+      <div class="cal-daynum">${d.getDate()}</div>
+      <div class="cal-cell-tasks">
+        ${dayTasks.slice(0,3).map(t => `<div class="cal-chip" style="background:${memberColor(t.assigned_to)}22;color:${memberColor(t.assigned_to)}">${escapeHtml(t.title)}</div>`).join("")}
+        ${dayTasks.length > 3 ? `<div class="cal-more">+${dayTasks.length - 3} more</div>` : ""}
+      </div>
+    </div>`);
+    cell.addEventListener("click", () => openDayModal(iso, d));
+    gridEl.appendChild(cell);
+  }
+}
+
+function renderWeekGrid() {
+  const start = startOfWeek(state.calCursor);
+  const end = new Date(start); end.setDate(end.getDate() + 6);
+  $("#cal-label").textContent = `${start.toLocaleDateString(undefined,{month:"short",day:"numeric"})} – ${end.toLocaleDateString(undefined,{month:"short",day:"numeric"})}`;
+
+  const today = new Date();
+  const grid = $("#calendar-grid");
+  grid.innerHTML = "";
+  const wrap = el(`<div class="cal-grid-week"></div>`);
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(start); d.setDate(d.getDate() + i);
+    const iso = isoDate(d);
+    const dayTasks = tasksOnDate(iso);
+    const dayEl = el(`<div class="cal-week-day ${sameDay(d, today) ? "today" : ""}">
+      <div class="cal-week-daylabel">${d.toLocaleDateString(undefined,{weekday:"short",month:"short",day:"numeric"})}</div>
+      ${dayTasks.length === 0 ? `<div class="empty-note" style="padding:0">Nothing due</div>` :
+        dayTasks.map(t => `<div class="cal-week-chip"><div class="cal-dot" style="background:${memberColor(t.assigned_to)}"></div>
+          <span style="${t.status === "done" ? "text-decoration:line-through;opacity:0.5" : ""}">${escapeHtml(t.title)}</span></div>`).join("")}
+    </div>`);
+    dayEl.addEventListener("click", () => openDayModal(iso, d));
+    wrap.appendChild(dayEl);
+  }
+  grid.appendChild(wrap);
+}
+
+let activeDayModal = null; // { iso, listEl } — kept in sync so completing/deleting a task updates an open day popup immediately
+
+function openDayModal(iso, dateObj) {
+  const backdrop = el(`<div class="modal-backdrop"><div class="modal-sheet">
+    <h3>${dateObj.toLocaleDateString(undefined,{weekday:"long",month:"long",day:"numeric"})}</h3>
+    <div id="day-task-list"></div>
+    <button class="btn" id="day-add-task">+ Add task for this day</button>
+    <button class="btn btn-secondary" id="day-close">Close</button>
+  </div></div>`);
+  document.body.appendChild(backdrop);
+  activeDayModal = { iso, listEl: backdrop.querySelector("#day-task-list") };
+  refreshDayModalIfOpen();
+  backdrop.querySelector("#day-close").addEventListener("click", () => { activeDayModal = null; backdrop.remove(); });
+  backdrop.querySelector("#day-add-task").addEventListener("click", () => { activeDayModal = null; backdrop.remove(); openAddTaskModal(iso); });
+}
+
+function refreshDayModalIfOpen() {
+  if (!activeDayModal) return;
+  const { iso, listEl } = activeDayModal;
+  const dayTasks = tasksOnDate(iso);
+  listEl.innerHTML = "";
+  if (dayTasks.length === 0) listEl.appendChild(el(`<div class="empty-note">No tasks due this day.</div>`));
+  dayTasks.forEach(t => listEl.appendChild(taskRow(t)));
+}
+
+// ---------------- Calendar feed (Settings) ----------------
+
+function feedUrl() {
+  return `${window.SUPABASE_URL}/functions/v1/ical-feed?household=${state.household.id}&token=${state.household.calendar_token}`;
+}
+
+function renderCalendarFeedPanel() {
+  $("#cal-feed-url").value = feedUrl();
+}
+
+$("#cal-feed-copy").addEventListener("click", () => {
+  navigator.clipboard.writeText(feedUrl());
+  const btn = $("#cal-feed-copy");
+  const original = btn.textContent;
+  btn.textContent = "Copied!";
+  setTimeout(() => { btn.textContent = original; }, 1500);
+});
+
+$("#cal-feed-regen").addEventListener("click", async () => {
+  if (!confirm("This will invalidate the old link — anyone subscribed to it will stop getting updates. Continue?")) return;
+  const newToken = Array.from(crypto.getRandomValues(new Uint8Array(12))).map(b => b.toString(16).padStart(2, "0")).join("");
+  await sb.from("households").update({ calendar_token: newToken }).eq("id", state.household.id);
+  state.household.calendar_token = newToken;
+  renderCalendarFeedPanel();
+});
 
 // ---------------- Leaderboard / history / settings ----------------
 
@@ -389,16 +590,29 @@ function renderLeaderboard() {
   });
 }
 
+async function deleteHistoryEntry(id) {
+  await sb.from("task_history").delete().eq("id", id);
+  await loadHistory(); renderHistory();
+}
+
 function renderHistory() {
   const box = $("#history-list");
   box.innerHTML = "";
+  const canDelete = !currentMember()?.is_kid;
   if (state.history.length === 0) box.appendChild(el(`<div class="empty-note">No activity yet.</div>`));
   state.history.forEach(h => {
     const when = new Date(h.occurred_at).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
-    box.appendChild(el(`<div class="card" style="padding:10px 14px">
-      <div style="font-size:13px"><strong>${escapeHtml(h.member_name || "Someone")}</strong> completed <strong>${escapeHtml(h.title)}</strong> ${h.points ? `(+${h.points} pts)` : ""}</div>
-      <div class="task-meta">${when}</div>
-    </div>`));
+    const row = el(`<div class="card" style="padding:10px 14px;display:flex;align-items:center;gap:10px">
+      <div style="flex:1">
+        <div style="font-size:13px"><strong>${escapeHtml(h.member_name || "Someone")}</strong> completed <strong>${escapeHtml(h.title)}</strong> ${h.points ? `(+${h.points} pts)` : ""}</div>
+        <div class="task-meta">${when}</div>
+      </div>
+      ${canDelete ? `<button class="icon-btn hist-delete" title="Delete" style="width:26px;height:26px;font-size:12px;flex-shrink:0">&times;</button>` : ""}
+    </div>`);
+    if (canDelete) row.querySelector(".hist-delete").addEventListener("click", () => {
+      if (confirm("Delete this history entry?")) deleteHistoryEntry(h.id);
+    });
+    box.appendChild(row);
   });
 }
 
@@ -421,7 +635,7 @@ function renderThemeGrid() {
 
 // ---------------- Tabs ----------------
 
-$$(".tabbar .tab-btn").forEach(btn => btn.addEventListener("click", () => {
+$$(".tabbar .tab-btn[data-tab]").forEach(btn => btn.addEventListener("click", () => {
   state.tab = btn.dataset.tab;
   renderAll();
 }));
@@ -430,11 +644,13 @@ $("#settings-btn").addEventListener("click", () => { state.tab = "settings"; ren
 
 function renderAll() {
   renderMemberRow();
-  $$(".tabbar .tab-btn").forEach(b => b.classList.toggle("active", b.dataset.tab === state.tab));
-  ["home", "history", "settings"].forEach(t => $("#panel-" + t).classList.toggle("hidden", t !== state.tab));
+  $$(".tabbar .tab-btn[data-tab]").forEach(b => b.classList.toggle("active", b.dataset.tab === state.tab));
+  ["home", "calendar", "history", "settings"].forEach(t => $("#panel-" + t).classList.toggle("hidden", t !== state.tab));
+  $("#app-view").classList.toggle("cal-fill", state.tab === "calendar");
   if (state.tab === "home") { renderTasks(); renderLeaderboard(); }
+  if (state.tab === "calendar") renderCalendar();
   if (state.tab === "history") renderHistory();
-  if (state.tab === "settings") renderThemeGrid();
+  if (state.tab === "settings") { renderThemeGrid(); renderCalendarFeedPanel(); }
 }
 
 // ---------------- Init ----------------

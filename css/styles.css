@@ -1,6 +1,6 @@
 * { box-sizing: border-box; }
 html, body { margin: 0; padding: 0; font-family: -apple-system, "Segoe UI", Roboto, sans-serif; }
-body { min-height: 100vh; background: var(--page-bg); color: var(--text-primary); transition: background .2s, color .2s; }
+body { min-height: 100dvh; background: var(--page-bg); color: var(--text-primary); transition: background .2s, color .2s; }
 button, input, select { font-family: inherit; font-size: 14px; }
 
 /* ---------- Themes ---------- */
@@ -42,7 +42,8 @@ body[data-theme="ocean"] {
 }
 
 /* ---------- Layout ---------- */
-.screen { max-width: 480px; margin: 0 auto; padding: 20px 16px 60px; }
+/* Keep content clear of the iPhone notch/Dynamic Island (top) and the home-indicator pill (bottom) */
+.screen { max-width: 480px; margin: 0 auto; padding: max(20px, env(safe-area-inset-top)) 16px max(60px, env(safe-area-inset-bottom)); }
 .hidden { display: none !important; }
 
 .card { background: var(--card-bg); border: 1px solid var(--card-border); border-radius: var(--radius); padding: 16px 18px; margin-bottom: 12px; }
@@ -117,6 +118,38 @@ textarea { resize: vertical; min-height: 50px; }
 .tab-btn { flex: 1; padding: 8px; border-radius: 10px; border: 1px solid var(--card-border); background: var(--card-bg);
   color: var(--text-secondary); font-weight: 600; font-size: 13px; cursor: pointer; }
 .tab-btn.active { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+
+/* ---------- Calendar ---------- */
+.cal-nav { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+.cal-grid-month { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+.cal-dow { font-size: 10px; text-align: center; color: var(--text-muted); font-weight: 700; padding-bottom: 4px; }
+.cal-cell { min-height: 78px; border-radius: 10px; border: 1px solid var(--card-border); background: var(--card-bg);
+  padding: 4px; cursor: pointer; display: flex; flex-direction: column; gap: 3px; overflow: hidden; }
+.cal-cell.today { border-color: var(--accent); border-width: 2px; }
+.cal-cell.other-month { opacity: 0.35; }
+.cal-daynum { font-size: 11px; font-weight: 600; flex-shrink: 0; }
+.cal-cell-tasks { display: flex; flex-direction: column; gap: 2px; overflow: hidden; }
+.cal-chip { font-size: 9px; font-weight: 600; padding: 1px 4px; border-radius: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cal-more { font-size: 9px; color: var(--text-muted); }
+
+.cal-grid-week { display: flex; flex-direction: column; gap: 8px; }
+.cal-week-day { border: 1px solid var(--card-border); border-radius: 12px; background: var(--card-bg); padding: 10px 12px; cursor: pointer; }
+.cal-week-day.today { border-color: var(--accent); border-width: 2px; }
+.cal-week-daylabel { font-size: 12px; font-weight: 700; color: var(--text-secondary); margin-bottom: 6px; }
+.cal-week-chip { display: flex; align-items: center; gap: 6px; font-size: 13px; padding: 3px 0; }
+.cal-week-chip .cal-dot { width: 8px; height: 8px; flex-shrink: 0; border-radius: 50%; }
+
+/* Let the calendar tab use the full available screen height instead of
+   stopping partway with empty space below (portrait phones especially) */
+#app-view.cal-fill { display: flex; flex-direction: column; }
+#app-view.cal-fill > *:not(#panel-calendar) { flex: 0 0 auto; }
+#app-view.cal-fill #panel-calendar { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+#app-view.cal-fill #calendar-grid { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+#app-view.cal-fill .cal-grid-month { flex: 1; grid-template-rows: repeat(6, 1fr); min-height: 0; }
+#app-view.cal-fill .cal-cell { min-height: 0; }
+#app-view.cal-fill .cal-grid-week { flex: 1; }
+#app-view.cal-fill .cal-week-day { flex: 1; display: flex; flex-direction: column; }
+
 
 /* ---------- Modal ---------- */
 .modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.45); display: flex; align-items: flex-end;
