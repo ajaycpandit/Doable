@@ -1,5 +1,5 @@
 * { box-sizing: border-box; }
-html, body { margin: 0; padding: 0; font-family: -apple-system, "Segoe UI", Roboto, sans-serif; }
+html, body { margin: 0; padding: 0; font-family: -apple-system, "Segoe UI", Roboto, sans-serif; overflow-x: hidden; }
 body { min-height: 100dvh; background: var(--page-bg); color: var(--text-primary); transition: background .2s, color .2s; }
 button, input, select { font-family: inherit; font-size: 14px; }
 
@@ -124,12 +124,12 @@ textarea { resize: vertical; min-height: 50px; }
 .cal-grid-month { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
 .cal-dow { font-size: 10px; text-align: center; color: var(--text-muted); font-weight: 700; padding-bottom: 4px; }
 .cal-cell { min-height: 78px; border-radius: 10px; border: 1px solid var(--card-border); background: var(--card-bg);
-  padding: 4px; cursor: pointer; display: flex; flex-direction: column; gap: 3px; overflow: hidden; }
+  padding: 4px; cursor: pointer; display: flex; flex-direction: column; gap: 3px; overflow: hidden; min-width: 0; }
 .cal-cell.today { border-color: var(--accent); border-width: 2px; }
 .cal-cell.other-month { opacity: 0.35; }
 .cal-daynum { font-size: 11px; font-weight: 600; flex-shrink: 0; }
-.cal-cell-tasks { display: flex; flex-direction: column; gap: 2px; overflow: hidden; }
-.cal-chip { font-size: 9px; font-weight: 600; padding: 1px 4px; border-radius: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cal-cell-tasks { display: flex; flex-direction: column; gap: 2px; overflow: hidden; min-width: 0; }
+.cal-chip { font-size: 9px; font-weight: 600; padding: 1px 4px; border-radius: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .cal-more { font-size: 9px; color: var(--text-muted); }
 
 .cal-grid-week { display: flex; flex-direction: column; gap: 8px; }
@@ -141,7 +141,7 @@ textarea { resize: vertical; min-height: 50px; }
 
 /* Let the calendar tab use the full available screen height instead of
    stopping partway with empty space below (portrait phones especially) */
-#app-view.cal-fill { display: flex; flex-direction: column; }
+#app-view.cal-fill { display: flex; flex-direction: column; min-height: 100dvh; }
 #app-view.cal-fill > *:not(#panel-calendar) { flex: 0 0 auto; }
 #app-view.cal-fill #panel-calendar { flex: 1; display: flex; flex-direction: column; min-height: 0; }
 #app-view.cal-fill #calendar-grid { flex: 1; display: flex; flex-direction: column; min-height: 0; }

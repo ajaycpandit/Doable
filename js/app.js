@@ -590,9 +590,37 @@ function renderLeaderboard() {
   });
 }
 
-async function deleteHistoryEntry(id) {
-  await sb.from("task_history").delete().eq("id", id);
-  await loadHistory(); renderHistory();
+function openDeleteHistoryModal(h) {
+  const memberName = escapeHtml(h.member_name || "this member");
+  const backdrop = el(`<div class="modal-backdrop"><div class="modal-sheet">
+    <h3>Delete history entry</h3>
+    <p>${memberName} completed "${escapeHtml(h.title)}" and earned ${h.points || 0} pts for it.</p>
+    <label><input type="checkbox" id="dh-adjust" checked style="width:auto"> Also remove points from ${memberName}</label>
+    <label>Points to remove</label>
+    <input type="text" id="dh-points" value="${h.points || 0}">
+    <button class="btn" id="dh-confirm">Delete entry</button>
+    <button class="btn btn-secondary" type="button" id="dh-cancel">Cancel</button>
+  </div></div>`);
+  document.body.appendChild(backdrop);
+  backdrop.querySelector("#dh-cancel").addEventListener("click", () => backdrop.remove());
+  backdrop.querySelector("#dh-confirm").addEventListener("click", async () => {
+    const adjust = backdrop.querySelector("#dh-adjust").checked;
+    const amount = parseInt(backdrop.querySelector("#dh-points").value, 10) || 0;
+
+    await sb.from("task_history").delete().eq("id", h.id);
+
+    if (adjust && amount !== 0 && h.member_id) {
+      const member = state.members.find(m => m.id === h.member_id);
+      const newPoints = Math.max(0, (member?.points || 0) - amount);
+      await sb.from("members").update({ points: newPoints }).eq("id", h.member_id);
+      if (member) member.points = newPoints;
+    }
+
+    backdrop.remove();
+    await loadHistory();
+    renderHistory();
+    renderLeaderboard();
+  });
 }
 
 function renderHistory() {
@@ -609,9 +637,7 @@ function renderHistory() {
       </div>
       ${canDelete ? `<button class="icon-btn hist-delete" title="Delete" style="width:26px;height:26px;font-size:12px;flex-shrink:0">&times;</button>` : ""}
     </div>`);
-    if (canDelete) row.querySelector(".hist-delete").addEventListener("click", () => {
-      if (confirm("Delete this history entry?")) deleteHistoryEntry(h.id);
-    });
+    if (canDelete) row.querySelector(".hist-delete").addEventListener("click", () => openDeleteHistoryModal(h));
     box.appendChild(row);
   });
 }

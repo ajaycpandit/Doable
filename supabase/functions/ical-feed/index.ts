@@ -30,6 +30,15 @@ const REMIND_TO_TRIGGER: Record<string, string> = {
   "5m": "-PT5M", "30m": "-PT30M", "1h": "-PT1H", "2h": "-PT2H", "1d": "-P1D",
 };
 
+const REMIND_LABEL: Record<string, string> = {
+  "5m": "5 minutes before", "30m": "30 minutes before", "1h": "1 hour before",
+  "2h": "2 hours before", "1d": "1 day before",
+};
+
+const RECURRENCE_LABEL: Record<string, string> = {
+  daily: "Daily", weekly: "Weekly", weekdays: "Weekdays",
+};
+
 Deno.serve(async (req) => {
   const url = new URL(req.url);
   const household = url.searchParams.get("household");
@@ -53,7 +62,7 @@ Deno.serve(async (req) => {
 
   const { data: tasks } = await supabase
     .from("tasks")
-    .select("id, title, notes, due_date, due_time, status, assigned_to, remind_before")
+    .select("id, title, notes, category, points, due_date, due_time, status, assigned_to, recurrence, remind_before")
     .eq("household_id", household)
     .not("due_date", "is", null);
 
@@ -87,7 +96,16 @@ Deno.serve(async (req) => {
       lines.push(`DTSTART;VALUE=DATE:${toIcsDate(t.due_date)}`);
     }
     lines.push(`SUMMARY:${icsEscape(t.title)}${t.status === "done" ? " (done)" : ""}`);
-    lines.push(`DESCRIPTION:${icsEscape((t.notes ? t.notes + " — " : "") + "assigned to " + who)}`);
+
+    const descParts: string[] = [];
+    if (t.notes) descParts.push(t.notes);
+    descParts.push(`Assigned to: ${who}`);
+    descParts.push(`Category: ${t.category === "chore" ? "Chore" : "Task"}`);
+    descParts.push(`Points: ${t.points}`);
+    if (t.recurrence !== "none") descParts.push(`Repeats: ${RECURRENCE_LABEL[t.recurrence] || t.recurrence}`);
+    if (t.remind_before !== "none") descParts.push(`Reminder: ${REMIND_LABEL[t.remind_before] || t.remind_before}`);
+    lines.push(`DESCRIPTION:${icsEscape(descParts.join("\n"))}`);
+
     const trigger = REMIND_TO_TRIGGER[t.remind_before];
     if (trigger && t.status !== "done") {
       lines.push("BEGIN:VALARM");
