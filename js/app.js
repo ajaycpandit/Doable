@@ -17,6 +17,8 @@ let state = {
   activeMemberId: null,
   tasks: [],
   history: [],
+  externalCalendars: [],
+  externalEvents: [],
   tab: "home",
   calMode: "month",
   calCursor: new Date(),
@@ -112,6 +114,8 @@ async function boot() {
 
   await loadTasks();
   await loadHistory();
+  await loadExternalCalendars();
+  await loadExternalEvents();
   renderAll();
   show("app-view");
 }
@@ -128,6 +132,16 @@ async function loadHistory() {
   const { data } = await sb.from("task_history").select("*").eq("household_id", state.household.id)
     .order("occurred_at", { ascending: false }).limit(60);
   state.history = data || [];
+}
+
+async function loadExternalCalendars() {
+  const { data } = await sb.from("external_calendars").select("*").eq("household_id", state.household.id).order("created_at");
+  state.externalCalendars = data || [];
+}
+
+async function loadExternalEvents() {
+  const { data } = await sb.from("external_events").select("*").eq("household_id", state.household.id);
+  state.externalEvents = data || [];
 }
 
 // ---------------- Member switcher ----------------
@@ -440,6 +454,12 @@ function isoDate(d) { return d.toISOString().slice(0, 10); }
 function sameDay(a, b) { return isoDate(a) === isoDate(b); }
 
 function tasksOnDate(dateIso) { return state.tasks.filter(t => t.due_date === dateIso); }
+function externalEventsOnDate(dateIso) { return state.externalEvents.filter(e => e.event_date === dateIso); }
+
+function externalCalLabel(calId) {
+  const c = state.externalCalendars.find(cc => cc.id === calId);
+  return c ? c.label : "Calendar";
+}
 
 function memberColor(memberId) {
   const m = state.members.find(mm => mm.id === memberId);
@@ -465,7 +485,22 @@ function navCalendar(dir) {
   renderCalendar();
 }
 
+let lastAutoSyncAttempt = 0;
+const AUTO_SYNC_STALE_MS = 10 * 60 * 1000; // consider a calendar "due" for refresh after 10 minutes
+
+function maybeAutoSyncExternalCalendars() {
+  if (state.externalCalendars.length === 0) return;
+  const now = Date.now();
+  if (now - lastAutoSyncAttempt < 60000) return; // never retry more than once a minute
+  const staleCutoff = now - AUTO_SYNC_STALE_MS;
+  const isStale = state.externalCalendars.some(c => !c.last_synced_at || new Date(c.last_synced_at).getTime() < staleCutoff);
+  if (!isStale) return;
+  lastAutoSyncAttempt = now;
+  syncExternalCalendars();
+}
+
 function renderCalendar() {
+  maybeAutoSyncExternalCalendars();
   state.calMode === "month" ? renderMonthGrid() : renderWeekGrid();
 }
 
@@ -486,11 +521,14 @@ function renderMonthGrid() {
     const d = new Date(gridStart); d.setDate(d.getDate() + i);
     const iso = isoDate(d);
     const dayTasks = tasksOnDate(iso);
+    const dayExternal = externalEventsOnDate(iso);
+    const combinedCount = dayTasks.length + dayExternal.length;
     const cell = el(`<div class="cal-cell ${sameDay(d, today) ? "today" : ""} ${d.getMonth() !== cursor.getMonth() ? "other-month" : ""}">
       <div class="cal-daynum">${d.getDate()}</div>
       <div class="cal-cell-tasks">
         ${dayTasks.slice(0,3).map(t => `<div class="cal-chip" style="background:${memberColor(t.assigned_to)}22;color:${memberColor(t.assigned_to)}">${escapeHtml(t.title)}</div>`).join("")}
-        ${dayTasks.length > 3 ? `<div class="cal-more">+${dayTasks.length - 3} more</div>` : ""}
+        ${dayExternal.slice(0, Math.max(0, 3 - dayTasks.length)).map(e => `<div class="cal-chip cal-chip-external">${escapeHtml(e.title)}</div>`).join("")}
+        ${combinedCount > 3 ? `<div class="cal-more">+${combinedCount - 3} more</div>` : ""}
       </div>
     </div>`);
     cell.addEventListener("click", () => openDayModal(iso, d));
@@ -511,11 +549,13 @@ function renderWeekGrid() {
     const d = new Date(start); d.setDate(d.getDate() + i);
     const iso = isoDate(d);
     const dayTasks = tasksOnDate(iso);
+    const dayExternal = externalEventsOnDate(iso);
     const dayEl = el(`<div class="cal-week-day ${sameDay(d, today) ? "today" : ""}">
       <div class="cal-week-daylabel">${d.toLocaleDateString(undefined,{weekday:"short",month:"short",day:"numeric"})}</div>
-      ${dayTasks.length === 0 ? `<div class="empty-note" style="padding:0">Nothing due</div>` :
-        dayTasks.map(t => `<div class="cal-week-chip"><div class="cal-dot" style="background:${memberColor(t.assigned_to)}"></div>
+      ${(dayTasks.length === 0 && dayExternal.length === 0) ? `<div class="empty-note" style="padding:0">Nothing due</div>` : ""}
+      ${dayTasks.map(t => `<div class="cal-week-chip"><div class="cal-dot" style="background:${memberColor(t.assigned_to)}"></div>
           <span style="${t.status === "done" ? "text-decoration:line-through;opacity:0.5" : ""}">${escapeHtml(t.title)}</span></div>`).join("")}
+      ${dayExternal.map(e => `<div class="cal-week-chip cal-week-chip-external"><div class="cal-dot"></div><span>${escapeHtml(e.title)}</span></div>`).join("")}
     </div>`);
     dayEl.addEventListener("click", () => openDayModal(iso, d));
     wrap.appendChild(dayEl);
@@ -529,11 +569,12 @@ function openDayModal(iso, dateObj) {
   const backdrop = el(`<div class="modal-backdrop"><div class="modal-sheet">
     <h3>${dateObj.toLocaleDateString(undefined,{weekday:"long",month:"long",day:"numeric"})}</h3>
     <div id="day-task-list"></div>
+    <div id="day-external-list"></div>
     <button class="btn" id="day-add-task">+ Add task for this day</button>
     <button class="btn btn-secondary" id="day-close">Close</button>
   </div></div>`);
   document.body.appendChild(backdrop);
-  activeDayModal = { iso, listEl: backdrop.querySelector("#day-task-list") };
+  activeDayModal = { iso, listEl: backdrop.querySelector("#day-task-list"), externalEl: backdrop.querySelector("#day-external-list") };
   refreshDayModalIfOpen();
   backdrop.querySelector("#day-close").addEventListener("click", () => { activeDayModal = null; backdrop.remove(); });
   backdrop.querySelector("#day-add-task").addEventListener("click", () => { activeDayModal = null; backdrop.remove(); openAddTaskModal(iso); });
@@ -541,11 +582,23 @@ function openDayModal(iso, dateObj) {
 
 function refreshDayModalIfOpen() {
   if (!activeDayModal) return;
-  const { iso, listEl } = activeDayModal;
+  const { iso, listEl, externalEl } = activeDayModal;
   const dayTasks = tasksOnDate(iso);
   listEl.innerHTML = "";
   if (dayTasks.length === 0) listEl.appendChild(el(`<div class="empty-note">No tasks due this day.</div>`));
   dayTasks.forEach(t => listEl.appendChild(taskRow(t)));
+
+  const dayExternal = externalEventsOnDate(iso);
+  externalEl.innerHTML = "";
+  if (dayExternal.length > 0) {
+    externalEl.appendChild(el(`<div class="section-title" style="margin-top:14px">From your calendars</div>`));
+    dayExternal.forEach(e => {
+      externalEl.appendChild(el(`<div class="card" style="padding:8px 14px;opacity:0.85">
+        <div style="font-size:13px">${escapeHtml(e.title)}${e.event_time ? " &middot; " + fmtTime(e.event_time) : ""}</div>
+        <div class="task-meta">${escapeHtml(externalCalLabel(e.external_calendar_id))} &middot; view-only</div>
+      </div>`));
+    });
+  }
 }
 
 // ---------------- Calendar feed (Settings) ----------------
@@ -573,6 +626,87 @@ $("#cal-feed-regen").addEventListener("click", async () => {
   state.household.calendar_token = newToken;
   renderCalendarFeedPanel();
 });
+
+// ---------------- External calendars (Settings) ----------------
+
+function renderExternalCalList() {
+  const box = $("#external-cal-list");
+  box.innerHTML = "";
+  if (state.externalCalendars.length === 0) {
+    box.appendChild(el(`<div class="empty-note">No calendars added yet.</div>`));
+    return;
+  }
+  state.externalCalendars.forEach(c => {
+    const member = state.members.find(m => m.id === c.member_id);
+    const status = c.last_sync_error ? `Error: ${escapeHtml(c.last_sync_error).slice(0,60)}`
+      : c.last_synced_at ? `Synced ${new Date(c.last_synced_at).toLocaleString(undefined,{month:"short",day:"numeric",hour:"numeric",minute:"2-digit"})}`
+      : "Not synced yet";
+    const row = el(`<div class="card" style="padding:10px 14px;display:flex;align-items:center;gap:10px">
+      <div style="flex:1">
+        <div style="font-size:13px;font-weight:600">${escapeHtml(c.label)}${member ? " &middot; " + escapeHtml(member.display_name) : ""}</div>
+        <div class="task-meta" style="${c.last_sync_error ? "color:#A32D2D" : ""}">${status}</div>
+      </div>
+      <button class="icon-btn ext-cal-delete" title="Remove" style="width:26px;height:26px;font-size:12px;flex-shrink:0">&times;</button>
+    </div>`);
+    row.querySelector(".ext-cal-delete").addEventListener("click", async () => {
+      if (!confirm(`Remove "${c.label}"? Its cached events will also be removed.`)) return;
+      await sb.from("external_calendars").delete().eq("id", c.id);
+      await loadExternalCalendars(); await loadExternalEvents();
+      renderExternalCalList(); renderCalendar();
+    });
+    box.appendChild(row);
+  });
+}
+
+$("#ext-cal-add").addEventListener("click", () => {
+  const options = state.members.map(m => `<option value="${m.id}">${escapeHtml(m.display_name)}</option>`).join("");
+  const backdrop = el(`<div class="modal-backdrop"><div class="modal-sheet">
+    <h3>Add a calendar</h3>
+    <form id="ext-cal-form">
+      <label>Label</label><input type="text" id="ec-label" placeholder="e.g. Ajay's Google Calendar" required>
+      <label>Whose calendar</label><select id="ec-member"><option value="">Whole household</option>${options}</select>
+      <label>Feed URL</label><input type="text" id="ec-url" placeholder="https:// or webcal:// link" required>
+      <button class="btn" type="submit">Add</button>
+      <button class="btn btn-secondary" type="button" id="ec-cancel">Cancel</button>
+    </form>
+  </div></div>`);
+  document.body.appendChild(backdrop);
+  backdrop.querySelector("#ec-cancel").addEventListener("click", () => backdrop.remove());
+  backdrop.querySelector("#ext-cal-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    await sb.from("external_calendars").insert({
+      household_id: state.household.id,
+      member_id: $("#ec-member").value || null,
+      label: $("#ec-label").value.trim(),
+      feed_url: $("#ec-url").value.trim(),
+    });
+    backdrop.remove();
+    await loadExternalCalendars();
+    renderExternalCalList();
+    await syncExternalCalendars();
+  });
+});
+
+async function syncExternalCalendars() {
+  const statusEl = $("#ext-cal-status");
+  statusEl.textContent = "Syncing…";
+  try {
+    const { data, error } = await sb.functions.invoke("sync-external-calendar", { body: { household_id: state.household.id } });
+    if (error) { statusEl.textContent = "Sync failed — check the feed URL(s) and try again."; return; }
+    const failed = (data?.results || []).filter(r => !r.ok);
+    statusEl.textContent = failed.length > 0
+      ? `Synced with ${failed.length} error(s) — see above.`
+      : `Synced ${new Date().toLocaleTimeString(undefined,{hour:"numeric",minute:"2-digit"})}`;
+  } catch (e) {
+    statusEl.textContent = "Sync failed — check your connection and try again.";
+  }
+  await loadExternalCalendars();
+  await loadExternalEvents();
+  renderExternalCalList();
+  renderCalendar();
+}
+
+$("#ext-cal-sync").addEventListener("click", syncExternalCalendars);
 
 // ---------------- Leaderboard / history / settings ----------------
 
@@ -676,7 +810,7 @@ function renderAll() {
   if (state.tab === "home") { renderTasks(); renderLeaderboard(); }
   if (state.tab === "calendar") renderCalendar();
   if (state.tab === "history") renderHistory();
-  if (state.tab === "settings") { renderThemeGrid(); renderCalendarFeedPanel(); }
+  if (state.tab === "settings") { renderThemeGrid(); renderCalendarFeedPanel(); renderExternalCalList(); }
 }
 
 // ---------------- Init ----------------
