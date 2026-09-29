@@ -499,9 +499,28 @@ function maybeAutoSyncExternalCalendars() {
   syncExternalCalendars();
 }
 
+function updateCalDebug() {
+  const el = $("#cal-debug");
+  if (!el) return;
+  const appView = $("#app-view");
+  const grid = $("#calendar-grid");
+  const monthGrid = document.querySelector(".cal-grid-month");
+  const appViewStyle = getComputedStyle(appView);
+  el.textContent =
+    `innerHeight: ${window.innerHeight}px\n` +
+    `--app-vh var: ${getComputedStyle(document.documentElement).getPropertyValue("--app-vh") || "(not set)"}\n` +
+    `has cal-fill class: ${appView.classList.contains("cal-fill")}\n` +
+    `#app-view display: ${appViewStyle.display}\n` +
+    `#app-view min-height: ${appViewStyle.minHeight}\n` +
+    `#app-view actual height: ${appView.getBoundingClientRect().height.toFixed(0)}px\n` +
+    `#calendar-grid actual height: ${grid ? grid.getBoundingClientRect().height.toFixed(0) : "(missing)"}px\n` +
+    `.cal-grid-month actual height: ${monthGrid ? monthGrid.getBoundingClientRect().height.toFixed(0) : "(missing)"}px`;
+}
+
 function renderCalendar() {
   maybeAutoSyncExternalCalendars();
   state.calMode === "month" ? renderMonthGrid() : renderWeekGrid();
+  updateCalDebug();
 }
 
 function renderMonthGrid() {
