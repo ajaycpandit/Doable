@@ -1,6 +1,6 @@
 * { box-sizing: border-box; }
 html, body { margin: 0; padding: 0; font-family: -apple-system, "Segoe UI", Roboto, sans-serif; overflow-x: hidden; }
-body { min-height: 100dvh; background: var(--page-bg); color: var(--text-primary); transition: background .2s, color .2s; }
+body { min-height: var(--app-vh, 100dvh); background: var(--page-bg); color: var(--text-primary); transition: background .2s, color .2s; }
 button, input, select { font-family: inherit; font-size: 14px; }
 
 /* ---------- Themes ---------- */
@@ -144,7 +144,7 @@ textarea { resize: vertical; min-height: 50px; }
 
 /* Let the calendar tab use the full available screen height instead of
    stopping partway with empty space below (portrait phones especially) */
-#app-view.cal-fill { display: flex; flex-direction: column; min-height: 100dvh; }
+#app-view.cal-fill { display: flex; flex-direction: column; min-height: var(--app-vh, 100dvh); }
 #app-view.cal-fill > *:not(#panel-calendar) { flex: 0 0 auto; }
 #app-view.cal-fill #panel-calendar { flex: 1; display: flex; flex-direction: column; min-height: 0; }
 #app-view.cal-fill #calendar-grid { flex: 1; display: flex; flex-direction: column; min-height: 0; }

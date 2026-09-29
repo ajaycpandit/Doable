@@ -154,6 +154,16 @@
 <script src="js/config.js"></script>
 <script src="js/app.js"></script>
 <script>
+  // iOS Safari's support for 100dvh is unreliable specifically in
+  // standalone/installed PWA mode, so compute the real viewport height in
+  // JS and expose it as a CSS variable instead of trusting the dvh unit.
+  function setAppHeight() {
+    document.documentElement.style.setProperty("--app-vh", window.innerHeight + "px");
+  }
+  window.addEventListener("resize", setAppHeight);
+  window.addEventListener("orientationchange", setAppHeight);
+  setAppHeight();
+
   if ("serviceWorker" in navigator) {
     window.addEventListener("load", () => navigator.serviceWorker.register("sw.js"));
   }
