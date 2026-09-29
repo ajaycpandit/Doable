@@ -3,7 +3,7 @@
 // Task data itself still requires a network connection (it lives in
 // Supabase) — this only makes the app *shell* load instantly/offline.
 
-const CACHE_NAME = "doable-shell-v1";
+const CACHE_NAME = "doable-shell-v2";
 const SHELL_FILES = [
   "./",
   "./index.html",
