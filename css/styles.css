@@ -120,7 +120,10 @@ textarea { resize: vertical; min-height: 50px; }
 .tab-btn.active { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
 
 /* ---------- Calendar ---------- */
-.cal-nav { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+.cal-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
+.cal-mode-toggle { display: flex; gap: 6px; flex-shrink: 0; }
+.cal-mode-toggle .tab-btn { padding: 6px 10px; font-size: 12px; }
+.cal-nav { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
 .cal-grid-month { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
 .cal-dow { font-size: 10px; text-align: center; color: var(--text-muted); font-weight: 700; padding-bottom: 4px; }
 .cal-cell { min-height: 78px; border-radius: 10px; border: 1px solid var(--card-border); background: var(--card-bg);
@@ -152,6 +155,8 @@ textarea { resize: vertical; min-height: 50px; }
 #app-view.cal-fill .cal-cell { min-height: 0; }
 #app-view.cal-fill .cal-grid-week { flex: 1; }
 #app-view.cal-fill .cal-week-day { flex: 1; display: flex; flex-direction: column; }
+#app-view.cal-fill .member-row { margin-bottom: 6px; }
+#app-view.cal-fill .app-header { padding-top: max(10px, env(safe-area-inset-top)); }
 
 
 /* ---------- Modal ---------- */
